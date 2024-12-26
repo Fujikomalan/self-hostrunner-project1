@@ -1,0 +1,62 @@
+name: Docker Image Build And Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  docker:
+    env:
+      IMAGE_NAME: 'fujikomalan/flask-github'
+      
+    runs-on: self-hosted 
+    steps:
+      - name: Checking Docker Installation
+        run: |
+          docker version
+          
+      - name: Checkout Repository
+        uses: actions/checkout@v4 
+        
+      - name: Docker Login
+        uses: docker/login-action@v2 
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}  
+          password: ${{ secrets.DOCKER_PASSWORD }} 
+
+      - name: Build Docker Image
+        run: |
+          docker build \
+                -t ${{env.IMAGE_NAME}}:latest \
+                -t ${{env.IMAGE_NAME}}:${{github.sha}} .
+    
+      - name: Push Docker Image
+        run: |
+          docker image push ${{env.IMAGE_NAME}}:latest
+          docker image push ${{env.IMAGE_NAME}}:${{github.sha}}
+
+      - name: Stop and Remove Existing Container (if running)
+        run: |
+          CONTAINER_ID=$(docker container ls -a -q -f "name=flaskapp")
+          if [ -n "$CONTAINER_ID" ]; then
+              echo "Stopping and removing existing container 'flaskapp'..."
+              docker container stop flaskapp || echo "Failed to stop container"
+              docker container rm flaskapp || echo "Failed to remove container"
+          else 
+              echo "No running container named 'flaskapp' found."
+          fi
+                
+      - name: Running Docker Container
+        run: |
+          docker container run -d --name flaskapp -p 8080:5000 ${{env.IMAGE_NAME}}:latest
+
+      - name: Verify Container Logs
+        run: |
+          docker container logs flaskapp
+
+      - name: Docker Cleanup
+        run: |
+          docker image prune -f
+          docker container prune -f
+
